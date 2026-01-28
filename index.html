@@ -908,13 +908,14 @@
             const dateStr = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
             try {
+                // 使用 text/plain 傳送 JSON 避免 CORS preflight (GAS 不支援 OPTIONS)
                 await fetch(GameState.leaderboardURL, {
                     method: 'POST',
-                    mode: 'no-cors', // GAS 需要 no-cors 或特殊處理，這裡先用最簡模式
-                    headers: { 'Content-Type': 'application/json' },
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain' },
                     body: JSON.stringify({ date: dateStr, score: score })
                 });
-                console.log("Score submitted!");
+                console.log("Score submitted via text/plain to GAS");
             } catch (err) {
                 console.error("Submit error:", err);
             }
@@ -1221,16 +1222,14 @@
 
         function countFingers(lm) {
             let count = 0;
-            // 拇指 (Thumb) 判定
-            // 檢查拇指指尖 (4) 是否遠離食指指節 (5)
-            // 這是判斷拇指是否張開的相對穩健方法
+            // 拇指 (Thumb) 判定 - 檢查 4 是否在 3 的左邊/右邊 (取決於手背還是手掌)
+            // 比較穩健的方式：檢查拇指尖(4) 與 小指根部(17) 的距離 是否大於 食指根部(5) 與 小指根部(17) 的距離
             const distThumb = Math.hypot(lm[4].x - lm[17].x, lm[4].y - lm[17].y);
-            const distIndex = Math.hypot(lm[5].x - lm[17].x, lm[5].y - lm[17].y);
+            const distIndexBase = Math.hypot(lm[5].x - lm[17].x, lm[5].y - lm[17].y);
 
-            // 如果拇指尖距離小指根部 比 食指根部距離小指根部 還要遠 1.2 倍以上，通常代表張開
-            if (distThumb > distIndex * 1.2) count++;
+            if (distThumb > distIndexBase * 1.1) count++;
 
-            // 食指: 8 < 6
+            // 食指: 8 < 6 (Y 軸向上為小)
             if (lm[8].y < lm[6].y) count++;
             // 中指: 12 < 10
             if (lm[12].y < lm[10].y) count++;
