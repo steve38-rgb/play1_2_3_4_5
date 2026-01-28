@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>資安與數位平權 - 粒子互動測驗</title>
+
+    <!-- Meta Tags for GitHub/SEO -->
+    <meta name="description" content="互動式資安與數位平權測驗，結合 MediaPipe 手勢辨識技術。">
+    <meta property="og:title" content="資安與數位平權 - 粒子互動測驗">
+    <meta property="og:description" content="使用手勢控制的現代化網頁遊戲，學習資安知識。">
+    <meta property="og:type" content="website">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;500;700&family=Orbitron:wght@500&display=swap"
+        rel="stylesheet">
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --primary: #00f2ff;
+            --correct: #00ff88;
+            --wrong: #ff0055;
+            --bg-glass: rgba(10, 20, 30, 0.85);
+            --border: rgba(255, 255, 255, 0.2);
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: 'Noto Sans TC', sans-serif;
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #ui-container {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            z-index: 10;
+        }
+
+        /* --- 頂部狀態列 --- */
+        .status-bar {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 20px 40px;
+            box-sizing: border-box;
+            font-family: 'Orbitron', sans-serif;
+            text-shadow: 0 0 10px rgba(0, 242, 255, 0.5);
+        }
+
+        .life-container {
+            font-size: 1.5rem;
+            color: #ff3333;
+        }
+
+        .score-container {
+            text-align: right;
+        }
+
+        .score-label {
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.6);
+            letter-spacing: 2px;
+        }
+
+        .score-value {
+            font-size: 2rem;
+            color: #fff;
+            font-weight: bold;
+        }
+
+        .combo-text {
+            font-size: 1rem;
+            color: #ffcc00;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .combo-text.visible {
+            opacity: 1;
+        }
+
+        /* --- 題目區 --- */
+        #question-box {
+            margin-top: 10px;
+            background: var(--bg-glass);
+            backdrop-filter: blur(12px);
+            padding: 30px 50px;
+            border-radius: 16px;
+            border: 1px solid var(--primary);
+            box-shadow: 0 0 20px rgba(0, 242, 255, 0.2);
+            text-align: center;
+            max-width: 800px;
+            width: 90%;
+            transform: translateY(-50px);
+            opacity: 0;
+            transition: all 0.5s;
+        }
+
+        #question-box.visible {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        #question-text {
+            color: #fff;
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        /* --- 選項區 --- */
+        #answers-container {
+            margin-top: auto;
+            margin-bottom: 50px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            width: 80%;
+            max-width: 1000px;
+        }
+
+        .answer-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            color: #fff;
+            font-size: 1.4rem;
+            position: relative;
+            transition: all 0.3s;
+            overflow: hidden;
+        }
+
+        .option-num {
+            position: absolute;
+            top: 10px;
+            left: 15px;
+            font-family: 'Orbitron', sans-serif;
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 1rem;
+        }
+
+        .fill-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: 0%;
+            background: rgba(0, 242, 255, 0.2);
+            z-index: -1;
+            transition: width 0.1s linear;
+        }
+
+        .answer-card.hovering {
+            border-color: var(--primary);
+            box-shadow: 0 0 15px var(--primary);
+            transform: scale(1.02);
+        }
+
+        .answer-card.correct {
+            border-color: var(--correct);
+            background: rgba(0, 255, 136, 0.2);
+            box-shadow: 0 0 30px var(--correct);
+        }
+
+        .answer-card.wrong {
+            border-color: var(--wrong);
+            background: rgba(255, 0, 85, 0.2);
+        }
+
+        /* --- 視窗: 詳解 & 結算 --- */
+        .modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: rgba(10, 15, 20, 0.95);
+            border: 2px solid var(--border);
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            max-width: 600px;
+            width: 90%;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s;
+            z-index: 100;
+        }
+
+        .modal.visible {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+            pointer-events: auto;
+        }
+
+        /* 詳解專用 */
+        #feedback-modal.correct-mode {
+            border-color: var(--correct);
+        }
+
+        #feedback-modal.wrong-mode {
+            border-color: var(--wrong);
+        }
+
+        /* 結算專用 */
+        #gameover-modal {
+            border-color: var(--primary);
+            box-shadow: 0 0 50px rgba(0, 242, 255, 0.3);
+        }
+
+        .modal-title {
+            font-size: 2rem;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+
+        .modal-content {
+            font-size: 1.2rem;
+            color: #ddd;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        /* 重玩按鈕 (手勢互動用) */
+        .restart-btn {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 15px 40px;
+            border: 2px solid #fff;
+            border-radius: 50px;
+            font-size: 1.5rem;
+            color: #fff;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .restart-btn .fill-overlay {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* 攝影機預覽視窗 */
+        #input-video {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 150px;
+            height: 150px;
+            object-fit: cover;
+            /* 裁切成正方形 */
+            border-radius: 12px;
+            border: 2px solid rgba(0, 242, 255, 0.5);
+            z-index: 50;
+            transform: scaleX(-1);
+            /* 鏡像翻轉 */
+            opacity: 0.8;
+            transition: opacity 0.3s;
+        }
+
+        #input-video:hover {
+            opacity: 1;
+        }
+
+        /* Help 連結樣式 */
+        .help-link {
+            position: absolute;
+            top: 20px;
+            right: 40px;
+            color: var(--primary);
+            text-decoration: none;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.9rem;
+            border: 1px solid var(--primary);
+            padding: 5px 15px;
+            border-radius: 20px;
+            transition: all 0.3s;
+            pointer-events: auto;
+            z-index: 100;
+        }
+
+        .help-link:hover {
+            background: var(--primary);
+            color: #000;
+            box-shadow: 0 0 15px var(--primary);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="ui-container">
+        <!-- 狀態列 -->
+        <div class="status-bar">
+            <div class="life-container">
+                LIVES: <span id="life-text">❤❤❤</span>
+            </div>
+            <div class="score-container">
+                <div class="score-label">SCORE</div>
+                <div class="score-value" id="score-text">0</div>
+                <div class="combo-text" id="combo-text">COMBO x1.2!</div>
+            </div>
+            <a href="help.html" class="help-link">HELP / 遊戲介紹</a>
+        </div>
+
+        <!-- 題目 -->
+        <div id="question-box">
+            <div id="question-text">Loading...</div>
+        </div>
+
+        <!-- 答案選項 -->
+        <div id="answers-container">
+            <div id="ans-0" class="answer-card" data-idx="0"><span class="option-num">A</span>
+                <div class="fill-overlay"></div><span class="text">Option A</span>
+            </div>
+            <div id="ans-1" class="answer-card" data-idx="1"><span class="option-num">B</span>
+                <div class="fill-overlay"></div><span class="text">Option B</span>
+            </div>
+            <div id="ans-2" class="answer-card" data-idx="2"><span class="option-num">C</span>
+                <div class="fill-overlay"></div><span class="text">Option C</span>
+            </div>
+            <div id="ans-3" class="answer-card" data-idx="3"><span class="option-num">D</span>
+                <div class="fill-overlay"></div><span class="text">Option D</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 詳解視窗 -->
+    <div id="feedback-modal" class="modal">
+        <div id="feedback-title" class="modal-title">TITLE</div>
+        <div id="feedback-content" class="modal-content">Explanation...</div>
+    </div>
+
+    <!-- 結算視窗 -->
+    <div id="gameover-modal" class="modal">
+        <div class="modal-title" style="color:var(--primary)">GAME OVER</div>
+        <div class="modal-content">
+            <p>最終得分</p>
+            <div style="font-size: 3rem; color: #fff; font-weight: bold; font-family: 'Orbitron';" id="final-score">0
+            </div>
+        </div>
+        <!-- 這是第 5 個互動目標 (Index 4) -->
+        <div id="restart-btn" class="restart-btn">
+            重新挑戰
+            <div class="fill-overlay"></div>
+        </div>
+        <div style="margin-top: 15px; font-size: 0.9rem; color: #aaa;">
+            請對鏡頭比出 <span style="color:#fff; font-weight:bold; font-size: 1.2rem;">🖐️ (5)</span>
+        </div>
+    </div>
+
+    <!-- 顯示攝影機畫面 (右下角) -->
+    <video id="input-video"></video>
+    <canvas id="stage"></canvas>
+
+    <script>
+        let QUIZ_DATA = [];      // 原始題庫
+        let SHUFFLED_QUIZ = [];  // 洗牌後的題庫
+
+        // --- 1. 遊戲狀態結構 ---
+        const GameState = {
+            state: 'loading',       // 'loading', 'playing', 'feedback', 'gameover'
+            questionIndex: 0,
+
+            // 遊戲數值
+            lives: 3,
+            score: 0,
+            streak: 0,
+            questionStartTime: 0,
+
+            // 手勢識別 (Finger Counting)
+            detectedCount: 0,       // 目前每幀偵測到的數量
+            confirmedCount: 0,      // 確認穩定的數量
+            lastCountTime: 0,       // 上次數量變化的時間
+            stableTime: 0,          // 持續穩定的時間 accumulate
+
+            chosenAnswer: -1,       // 鎖定的答案 (0~3)
+            selectionProgress: 0,   // 0.0 ~ 1.0 (集氣進度)
+
+            // UI 座標緩存 (用於粒子吸引)
+            targetRects: [],
+
+            currentOptionMapping: []
+        };
+
+        // ... (CONFIG, particles, window.onload 保持不變) ...
+
+        const CONFIG = {
+            particleCount: 15000,
+            baseSpeed: 0.5,
+            color: 'rgba(0, 242, 255, 0.8)',
+            // 稍後在粒子邏輯中使用
+        };
+
+        let canvas, ctx, width, height;
+        // 移除座標相關 handX, handY, 改用 fingerCount
+        let currentFingerCount = 0;
+        let isHandDetected = false;
+
+        // ... (particles array init) ...
+        const particles = {
+            x: new Float32Array(CONFIG.particleCount),
+            y: new Float32Array(CONFIG.particleCount),
+            vx: new Float32Array(CONFIG.particleCount),
+            vy: new Float32Array(CONFIG.particleCount),
+            originVx: new Float32Array(CONFIG.particleCount),
+            originVy: new Float32Array(CONFIG.particleCount)
+        };
+
+        // ... (loadCSV, parseCSV, startGame 保持不變) ...
+
+        // --- 3. 初始化 ---
+        window.onload = async function () {
+            canvas = document.getElementById('stage');
+            ctx = canvas.getContext('2d', { alpha: false });
+            resize();
+            initParticles();
+            initMediaPipe();
+
+            await loadCSV();
+
+            window.addEventListener('resize', resize);
+            requestAnimationFrame(loop);
+        };
+
+        async function loadCSV() {
+            const statusEl = document.getElementById('question-text');
+            try {
+                statusEl.textContent = "讀取題庫中...";
+                const response = await fetch('questions.csv');
+                if (!response.ok) throw new Error("File error");
+                const text = await response.text();
+                parseCSV(text);
+                startGame();
+            } catch (err) {
+                console.error(err);
+                statusEl.textContent = "CSV Error: " + err.message;
+            }
+        }
+
+        function parseCSV(text) {
+            const lines = text.trim().split(/\r?\n/);
+            QUIZ_DATA = [];
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                const parts = [];
+                let current = '', inQuote = false;
+                for (let char of line) {
+                    if (char === '"') inQuote = !inQuote;
+                    else if (char === ',' && !inQuote) { parts.push(current); current = ''; }
+                    else current += char;
+                }
+                parts.push(current);
+                const clean = parts.map(p => p.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+                if (clean.length >= 7) {
+                    QUIZ_DATA.push({
+                        question: clean[0],
+                        options: [clean[1], clean[2], clean[3], clean[4]],
+                        answer: parseInt(clean[5]) - 1,
+                        explanation: clean[6]
+                    });
+                }
+            }
+        }
+
+        function initParticles() {
+            for (let i = 0; i < CONFIG.particleCount; i++) {
+                particles.x[i] = Math.random() * width;
+                particles.y[i] = Math.random() * height;
+                const a = Math.random() * Math.PI * 2;
+                const s = Math.random() * 0.5 + 0.2;
+                particles.originVx[i] = Math.cos(a) * s;
+                particles.originVy[i] = Math.sin(a) * s;
+                particles.vx[i] = particles.originVx[i];
+                particles.vy[i] = particles.originVy[i];
+            }
+        }
+
+        // --- 4. 遊戲流程控制 ---
+
+        function startGame() {
+            // 重置狀態
+            GameState.score = 0;
+            GameState.lives = 3;
+            GameState.streak = 0;
+            GameState.questionIndex = 0;
+
+            // 隨機打亂題庫順序 (Shuffle)
+            SHUFFLED_QUIZ = [...QUIZ_DATA].sort(() => Math.random() - 0.5);
+
+            updateUI();
+
+            document.getElementById('gameover-modal').classList.remove('visible');
+            loadQuestion(0);
+        }
+
+        function loadQuestion(idx) {
+            if (idx >= SHUFFLED_QUIZ.length) {
+                // 題目全做完了 -> 遊戲結束
+                endGame();
+                return;
+            }
+
+            GameState.state = 'playing';
+            GameState.questionIndex = idx;
+            GameState.questionStartTime = Date.now();
+            GameState.selectionProgress = 0;
+            GameState.confirmedCount = 0;
+            GameState.chosenAnswer = -1;
+
+            const q = SHUFFLED_QUIZ[idx];
+
+            // 隨機排列選項 (Option Shuffle)
+            // 建立一個索引陣列 [0, 1, 2, 3] 並打亂
+            const indices = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
+            GameState.currentOptionMapping = indices;
+
+            // UI 更新
+            const box = document.getElementById('question-box');
+            box.classList.remove('visible');
+
+            // 重置選項卡樣式
+            for (let i = 0; i < 4; i++) {
+                const el = document.getElementById('ans-' + i);
+                el.className = 'answer-card';
+                el.querySelector('.fill-overlay').style.width = '0%';
+
+                // 根據打亂後的索引填入文字
+                // UI 的 i 對應到 資料的 indices[i]
+                el.querySelector('.text').textContent = q.options[indices[i]];
+            }
+
+            setTimeout(() => {
+                document.getElementById('question-text').textContent = q.question;
+                box.classList.add('visible');
+                updateInteractRects();
+            }, 500);
+        }
+
+        function checkAnswer(uiIndex) {
+            GameState.state = 'feedback';
+            const q = SHUFFLED_QUIZ[GameState.questionIndex];
+
+            // 透過 Mapping 對照回原始答案索引
+            // UI 選了 uiIndex，代表原始資料的 indices[uiIndex]
+            const originalIndex = GameState.currentOptionMapping[uiIndex];
+            const isCorrect = (originalIndex === q.answer);
+
+            const selectedEl = document.getElementById('ans-' + uiIndex);
+
+            if (isCorrect) {
+                // --- 答對 ---
+                selectedEl.classList.add('correct');
+
+                // 計算分數
+                const timeSpent = (Date.now() - GameState.questionStartTime) / 1000;
+                let timeBonus = 0;
+                if (timeSpent < 5) timeBonus = 500;
+                else if (timeSpent < 10) timeBonus = 200;
+
+                GameState.streak++;
+                let streakMult = 1.0 + (GameState.streak * 0.1); // x1.2, x1.3...
+
+                const points = Math.floor((1000 + timeBonus) * streakMult);
+                GameState.score += points;
+
+                updateUI();
+                playFeedback(true, "答對了！", `+${points} 分`);
+
+                setTimeout(() => {
+                    closeFeedback();
+                    loadQuestion(GameState.questionIndex + 1);
+                }, 2000);
+
+            } else {
+                // --- 答錯 ---
+                selectedEl.classList.add('wrong');
+
+                // 找出正確選項並標示
+                // 尋找 mapping 中哪個 UI index 對應到 q.answer
+                const correctUIIndex = GameState.currentOptionMapping.indexOf(q.answer);
+                document.getElementById('ans-' + correctUIIndex).classList.add('correct');
+
+                GameState.lives--;
+                GameState.streak = 0;
+                updateUI();
+
+                playFeedback(false, "答錯了！", q.explanation);
+
+                const nextDelay = 5000;
+                setTimeout(() => {
+                    closeFeedback();
+                    if (GameState.lives <= 0) {
+                        endGame();
+                    } else {
+                        loadQuestion(GameState.questionIndex + 1);
+                    }
+                }, nextDelay);
+            }
+        }
+
+        function endGame() {
+            GameState.state = 'gameover';
+            document.getElementById('final-score').textContent = GameState.score;
+            document.getElementById('gameover-modal').classList.add('visible');
+            updateInteractRects(); // 確保重新抓取「重玩按鈕」的座標
+        }
+
+        function updateUI() {
+            // 生命值 (Hearts)
+            let hearts = "";
+            for (let i = 0; i < GameState.lives; i++) hearts += "❤";
+            document.getElementById('life-text').textContent = hearts;
+
+            // 分數
+            document.getElementById('score-text').textContent = GameState.score;
+
+            // Combo
+            const comboEl = document.getElementById('combo-text');
+            if (GameState.streak > 1) {
+                comboEl.textContent = `COMBO x${(1.0 + GameState.streak * 0.1).toFixed(1)}!`;
+                comboEl.classList.add('visible');
+            } else {
+                comboEl.classList.remove('visible');
+            }
+        }
+
+        function playFeedback(isCorrect, title, content) {
+            const modal = document.getElementById('feedback-modal');
+            const tEl = document.getElementById('feedback-title');
+            const cEl = document.getElementById('feedback-content');
+
+            modal.className = 'modal visible ' + (isCorrect ? 'correct-mode' : 'wrong-mode');
+            tEl.textContent = title;
+            tEl.style.color = isCorrect ? 'var(--correct)' : 'var(--wrong)';
+            cEl.textContent = content;
+        }
+
+        function closeFeedback() {
+            document.getElementById('feedback-modal').className = 'modal';
+        }
+
+        // --- 5. 互動與迴圈 ---
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+            updateInteractRects();
+        }
+
+        function updateInteractRects() {
+            GameState.targetRects = [];
+            for (let i = 0; i < 4; i++) {
+                const el = document.getElementById('ans-' + i);
+                if (el && el.offsetParent !== null) {
+                    GameState.targetRects.push(el.getBoundingClientRect());
+                } else {
+                    GameState.targetRects.push(null);
+                }
+            }
+        }
+
+        // --- 5. 主循環 (重寫邏輯) ---
+
+        // --- 5. 主循環 (Finger Counting Logic) ---
+
+        function loop() {
+            // 平滑手指計數邏輯
+            if (currentFingerCount !== GameState.detectedCount) {
+                GameState.detectedCount = currentFingerCount;
+                GameState.lastCountTime = Date.now();
+            }
+
+            const stableDuration = Date.now() - GameState.lastCountTime;
+
+            // 狀態機: 答題中
+            if (GameState.state === 'playing') {
+                // 必須穩定 300ms 才算確認該手勢 (防閃爍)
+                // 1~4 根手指對應 0~3 (A~D)
+                if (stableDuration > 300 && GameState.detectedCount >= 1 && GameState.detectedCount <= 4) {
+                    const targetIndex = GameState.detectedCount - 1;
+
+                    if (GameState.chosenAnswer !== targetIndex) {
+                        // 換答案了，重置進度
+                        GameState.chosenAnswer = targetIndex;
+                        GameState.selectionProgress = 0;
+                        document.querySelectorAll('.answer-card').forEach(el => el.classList.remove('hovering'));
+                        document.querySelectorAll('.fill-overlay').forEach(el => el.style.width = '0%');
+                    } else {
+                        // 同一個答案，增加集氣進度
+                        GameState.selectionProgress += 0.03; // 約 0.5~1秒集滿
+
+                        // Visual Update
+                        const el = document.getElementById('ans-' + targetIndex);
+                        if (el) {
+                            el.classList.add('hovering');
+                            el.querySelector('.fill-overlay').style.width = Math.min(GameState.selectionProgress * 100, 100) + '%';
+                        }
+
+                        if (GameState.selectionProgress >= 1.0) {
+                            checkAnswer(targetIndex);
+                            // 觸發後重置以防連續觸發
+                            GameState.chosenAnswer = -1;
+                            GameState.selectionProgress = 0;
+                        }
+                    }
+                } else {
+                    // 手指放開 or 0 根 or 不穩定 -> 慢慢將進度歸零
+                    if (GameState.selectionProgress > 0) {
+                        GameState.selectionProgress -= 0.05;
+                        if (GameState.selectionProgress <= 0) {
+                            GameState.selectionProgress = 0;
+                            GameState.chosenAnswer = -1;
+                            document.querySelectorAll('.answer-card').forEach(el => el.classList.remove('hovering'));
+                            document.querySelectorAll('.fill-overlay').forEach(el => el.style.width = '0%');
+                        } else {
+                            // 視覺消退
+                            if (GameState.chosenAnswer !== -1) {
+                                document.querySelector(`#ans-${GameState.chosenAnswer} .fill-overlay`).style.width = (GameState.selectionProgress * 100) + '%';
+                            }
+                        }
+                    }
+                }
+            }
+            // 狀態機: Game Over
+            else if (GameState.state === 'gameover') {
+                // 偵測「5」(手掌) 來重玩
+                if (stableDuration > 500 && currentFingerCount === 5) {
+                    GameState.selectionProgress += 0.02;
+                    const btn = document.getElementById('restart-btn');
+                    if (btn) btn.querySelector('.fill-overlay').style.width = Math.min(GameState.selectionProgress * 100, 100) + '%';
+
+                    if (GameState.selectionProgress >= 1.0) {
+                        startGame();
+                    }
+                } else {
+                    GameState.selectionProgress = 0;
+                    const btn = document.getElementById('restart-btn');
+                    if (btn) btn.querySelector('.fill-overlay').style.width = '0%';
+                }
+            }
+
+            updateParticles();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        function updateParticles() {
+            let tx = -1000, ty = -1000;
+            let forceMult = 0;
+
+            if (GameState.state === 'playing' && GameState.chosenAnswer !== -1) {
+                const r = GameState.targetRects[GameState.chosenAnswer];
+                if (r) {
+                    tx = r.left + r.width / 2;
+                    ty = r.top + r.height / 2;
+                    forceMult = 5.0; // 強力吸引到卡片
+                }
+            } else if (GameState.state === 'gameover' && GameState.selectionProgress > 0) {
+                const btn = document.getElementById('restart-btn');
+                if (btn) {
+                    const r = btn.getBoundingClientRect();
+                    tx = r.left + r.width / 2;
+                    ty = r.top + r.height / 2;
+                    forceMult = 5.0;
+                }
+            }
+
+            for (let i = 0; i < CONFIG.particleCount; i++) {
+                let pvx = particles.vx[i], pvy = particles.vy[i];
+                let px = particles.x[i], py = particles.y[i];
+
+                if (forceMult > 0 && isHandDetected) {
+                    const dx = tx - px, dy = ty - py;
+                    const dSq = dx * dx + dy * dy;
+                    if (dSq < CONFIG.interactionRadiusSq * 2 && dSq > 100) {
+                        const f = (1 - dSq / (CONFIG.interactionRadiusSq * 2)) * 0.002 * forceMult;
+                        pvx += dx * f;
+                        pvy += dy * f;
+                    }
+                }
+
+                pvx *= 0.95; pvy *= 0.95;
+                pvx += particles.originVx[i] * 0.05; pvy += particles.originVy[i] * 0.05;
+
+                particles.x[i] += pvx; particles.y[i] += pvy;
+                if (particles.x[i] < 0) particles.x[i] = width; else if (particles.x[i] > width) particles.x[i] = 0;
+                if (particles.y[i] < 0) particles.y[i] = height; else if (particles.y[i] > height) particles.y[i] = 0;
+
+                particles.vx[i] = pvx; particles.vy[i] = pvy;
+            }
+        }
+
+        function draw() {
+            ctx.fillStyle = 'rgba(5, 5, 10, 0.3)';
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.fillStyle = CONFIG.color;
+            if (GameState.chosenAnswer !== -1) ctx.fillStyle = '#00ffcc';
+
+            for (let i = 0; i < CONFIG.particleCount; i++) {
+                ctx.fillRect(~~particles.x[i], ~~particles.y[i], 1, 1);
+            }
+
+            // 中央顯示當前手勢提示
+            if (isHandDetected && GameState.state === 'playing') {
+                ctx.font = "bold 80px Orbitron";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+
+                let text = "";
+                if (currentFingerCount === 1) text = "A";
+                else if (currentFingerCount === 2) text = "B";
+                else if (currentFingerCount === 3) text = "C";
+                else if (currentFingerCount === 4) text = "D";
+
+                if (text) {
+                    // 顯示文字
+                    ctx.fillText(text, width / 2, height / 2);
+
+                    // 畫個外圈
+                    ctx.beginPath();
+                    ctx.arc(width / 2, height / 2, 60, 0, Math.PI * 2);
+                    ctx.strokeStyle = "rgba(0, 242, 255, 0.3)";
+                    ctx.lineWidth = 5;
+                    ctx.stroke();
+
+                    // 畫進度圈 (Progress Ring)
+                    if (GameState.selectionProgress > 0) {
+                        const startAngle = -Math.PI / 2;
+                        const endAngle = startAngle + (Math.PI * 2 * GameState.selectionProgress);
+                        ctx.beginPath();
+                        ctx.arc(width / 2, height / 2, 60, startAngle, endAngle);
+                        ctx.strokeStyle = "#00f2ff";
+                        ctx.lineWidth = 8;
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+
+        // --- 6. MediaPipe ---
+        function initMediaPipe() {
+            const v = document.getElementById('input-video');
+            const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+            hands.onResults(onHandsResults);
+            new Camera(v, { onFrame: async () => await hands.send({ image: v }), width: 640, height: 480 }).start();
+        }
+
+        function onHandsResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                isHandDetected = true;
+                const landmarks = results.multiHandLandmarks[0];
+                currentFingerCount = countFingers(landmarks);
+            } else {
+                isHandDetected = false;
+                currentFingerCount = 0;
+            }
+        }
+
+        function countFingers(lm) {
+            let count = 0;
+            // 拇指 (Thumb) 判定
+            // 檢查拇指指尖 (4) 是否遠離食指指節 (5)
+            // 這是判斷拇指是否張開的相對穩健方法
+            const distThumb = Math.hypot(lm[4].x - lm[17].x, lm[4].y - lm[17].y);
+            const distIndex = Math.hypot(lm[5].x - lm[17].x, lm[5].y - lm[17].y);
+
+            // 如果拇指尖距離小指根部 比 食指根部距離小指根部 還要遠 1.2 倍以上，通常代表張開
+            if (distThumb > distIndex * 1.2) count++;
+
+            // 食指: 8 < 6
+            if (lm[8].y < lm[6].y) count++;
+            // 中指: 12 < 10
+            if (lm[12].y < lm[10].y) count++;
+            // 無名指: 16 < 14
+            if (lm[16].y < lm[14].y) count++;
+            // 小指: 20 < 18
+            if (lm[20].y < lm[18].y) count++;
+
+            return count;
+        }
+
+
+    </script>
+</body>
+
+</html>
