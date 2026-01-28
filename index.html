@@ -280,6 +280,96 @@
             opacity: 1;
         }
 
+        /* 全螢幕覆蓋層樣式 */
+        .screen-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(5, 10, 15, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            transition: opacity 0.5s ease, visibility 0.5s;
+            backdrop-filter: blur(10px);
+        }
+
+        .screen-overlay.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .menu-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 4rem;
+            margin-bottom: 50px;
+            background: linear-gradient(to right, var(--primary), #fff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            letter-spacing: 12px;
+            text-align: center;
+        }
+
+        .menu-btn {
+            width: 280px;
+            padding: 18px;
+            margin: 15px;
+            background: transparent;
+            border: 1px solid var(--primary);
+            color: var(--primary);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.2rem;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+            text-decoration: none;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            pointer-events: auto;
+        }
+
+        .menu-btn:hover {
+            background: var(--primary);
+            color: #000;
+            box-shadow: 0 0 30px var(--primary);
+            transform: translateY(-3px);
+        }
+
+        .menu-btn.primary {
+            background: var(--primary);
+            color: #000;
+        }
+
+        /* 倒數計時樣式 */
+        #countdown-text {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 12rem;
+            color: var(--primary);
+            text-shadow: 0 0 50px var(--primary);
+            animation: countPulse 1s infinite;
+        }
+
+        @keyframes countPulse {
+            0% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+
+            50% {
+                transform: scale(1.1);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 0;
+            }
+        }
+
         /* Help 連結樣式 */
         .help-link {
             position: absolute;
@@ -306,6 +396,27 @@
 </head>
 
 <body>
+
+    <!-- 啟動畫面 -->
+    <div id="landing-screen" class="screen-overlay">
+        <h1 class="menu-title">Mission<br>Intelligence</h1>
+        <button class="menu-btn primary" onclick="goToCameraRequest()">開始遊戲</button>
+        <a href="help.html" class="menu-btn">遊戲介紹</a>
+    </div>
+
+    <!-- 權利確認畫面 -->
+    <div id="camera-screen" class="screen-overlay hidden">
+        <h2 class="menu-title" style="font-size: 2rem; letter-spacing: 4px;">系統授權</h2>
+        <p style="color: #aaa; margin-bottom: 30px;">本遊戲需要使用網路攝影機進行手勢識別</p>
+        <button class="menu-btn primary" onclick="enableCameraFlow()">授予權限並開啟</button>
+        <button class="menu-btn" onclick="location.reload()">返回主選單</button>
+    </div>
+
+    <!-- 倒數計時畫面 -->
+    <div id="countdown-screen" class="screen-overlay hidden">
+        <div id="countdown-text">5</div>
+        <p style="color: var(--primary); margin-top: 20px; font-family: 'Orbitron';">GET READY</p>
+    </div>
 
     <div id="ui-container">
         <!-- 狀態列 -->
@@ -433,7 +544,6 @@
             ctx = canvas.getContext('2d', { alpha: false });
             resize();
             initParticles();
-            initMediaPipe();
 
             await loadCSV();
 
@@ -442,18 +552,52 @@
         };
 
         async function loadCSV() {
-            const statusEl = document.getElementById('question-text');
             try {
-                statusEl.textContent = "讀取題庫中...";
                 const response = await fetch('questions.csv');
                 if (!response.ok) throw new Error("File error");
                 const text = await response.text();
                 parseCSV(text);
-                startGame();
+                // 不在此處呼叫 startGame，改由倒數計時結束後觸發
             } catch (err) {
                 console.error(err);
-                statusEl.textContent = "CSV Error: " + err.message;
+                document.getElementById('question-text').textContent = "題庫讀取失敗";
             }
+        }
+
+        // --- 4. 流程跳轉邏輯 ---
+        function goToCameraRequest() {
+            document.getElementById('landing-screen').classList.add('hidden');
+            document.getElementById('camera-screen').classList.remove('hidden');
+        }
+
+        async function enableCameraFlow() {
+            document.getElementById('camera-screen').classList.add('hidden');
+            document.getElementById('countdown-screen').classList.remove('hidden');
+
+            // 初始化 MediaPipe 手勢識別
+            try {
+                initMediaPipe();
+                startCountdown();
+            } catch (err) {
+                console.error(err);
+                alert("無法存取攝影機，請檢查權限設定與網頁協定 (必須使用 HTTPS 或 localhost)。");
+                location.reload();
+            }
+        }
+
+        function startCountdown() {
+            let count = 5;
+            const el = document.getElementById('countdown-text');
+            const timer = setInterval(() => {
+                count--;
+                if (count <= 0) {
+                    clearInterval(timer);
+                    document.getElementById('countdown-screen').classList.add('hidden');
+                    startGame();
+                } else {
+                    el.textContent = count;
+                }
+            }, 1000);
         }
 
         function parseCSV(text) {
