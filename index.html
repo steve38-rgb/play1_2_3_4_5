@@ -623,7 +623,6 @@
                     <tr>
                         <th>RANK</th>
                         <th>AGENT / PHOTO</th>
-                        <th>DATE / TIME</th>
                         <th>SCORE</th>
                     </tr>
                 </thead>
@@ -1060,7 +1059,6 @@
                     row.innerHTML = `
                         <td class="${rankClass}">${index + 1}</td>
                         <td style="text-align:left;">${photoHtml} ${entry.name || '玩家'}</td>
-                        <td style="font-size: 0.8rem; color: #aaa;">${entry.time}</td>
                         <td style="font-family: 'Orbitron'; font-weight:bold;">${entry.score.toLocaleString()}</td>
                     `;
                     tbody.appendChild(row);
