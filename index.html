@@ -60,10 +60,22 @@
             width: 100%;
             display: flex;
             justify-content: space-between;
+            align-items: center;
             padding: 20px 40px;
             box-sizing: border-box;
             font-family: 'Orbitron', sans-serif;
             text-shadow: 0 0 10px rgba(0, 242, 255, 0.5);
+            position: relative;
+        }
+
+        .timer-container {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2.5rem;
+            color: var(--primary);
+            font-weight: bold;
         }
 
         .life-container {
@@ -370,27 +382,30 @@
             }
         }
 
-        /* Help 連結樣式 */
+        /* Help 連結樣式 (左下角) */
         .help-link {
-            position: absolute;
-            top: 20px;
-            right: 40px;
+            position: fixed;
+            bottom: 20px;
+            left: 40px;
             color: var(--primary);
             text-decoration: none;
             font-family: 'Orbitron', sans-serif;
             font-size: 0.9rem;
             border: 1px solid var(--primary);
-            padding: 5px 15px;
-            border-radius: 20px;
+            padding: 8px 20px;
+            border-radius: 25px;
             transition: all 0.3s;
             pointer-events: auto;
             z-index: 100;
+            background: rgba(10, 20, 30, 0.8);
+            backdrop-filter: blur(5px);
         }
 
         .help-link:hover {
             background: var(--primary);
             color: #000;
             box-shadow: 0 0 15px var(--primary);
+            transform: translateY(-2px);
         }
     </style>
 </head>
@@ -424,13 +439,14 @@
             <div class="life-container">
                 LIVES: <span id="life-text">❤❤❤</span>
             </div>
+            <div class="timer-container" id="timer-text">03:00</div>
             <div class="score-container">
                 <div class="score-label">SCORE</div>
                 <div class="score-value" id="score-text">0</div>
                 <div class="combo-text" id="combo-text">COMBO x1.2!</div>
             </div>
-            <a href="help.html" class="help-link">HELP / 遊戲介紹</a>
         </div>
+        <a href="help.html" class="help-link">HELP / 遊戲介紹</a>
 
         <!-- 題目 -->
         <div id="question-box">
@@ -496,6 +512,10 @@
             score: 0,
             streak: 0,
             questionStartTime: 0,
+
+            // 計時器
+            timeLeft: 180,         // 3 分鐘 = 180 秒
+            timerInterval: null,
 
             // 手勢識別 (Finger Counting)
             detectedCount: 0,       // 目前每幀偵測到的數量
@@ -647,14 +667,41 @@
             GameState.lives = 3;
             GameState.streak = 0;
             GameState.questionIndex = 0;
+            GameState.timeLeft = 180; // 3分鐘
+
+            // 啟動計時器
+            if (GameState.timerInterval) clearInterval(GameState.timerInterval);
+            GameState.timerInterval = setInterval(() => {
+                if (GameState.state === 'playing' || GameState.state === 'feedback') {
+                    GameState.timeLeft--;
+                    updateTimerUI();
+                    if (GameState.timeLeft <= 0) {
+                        endGame('win'); //  Surviving 3 minutes is a win according to user
+                    }
+                }
+            }, 1000);
 
             // 隨機打亂題庫順序 (Shuffle)
             SHUFFLED_QUIZ = [...QUIZ_DATA].sort(() => Math.random() - 0.5);
 
             updateUI();
+            updateTimerUI();
 
             document.getElementById('gameover-modal').classList.remove('visible');
             loadQuestion(0);
+        }
+
+        function updateTimerUI() {
+            const m = Math.floor(GameState.timeLeft / 60);
+            const s = GameState.timeLeft % 60;
+            document.getElementById('timer-text').textContent =
+                `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+
+            if (GameState.timeLeft < 30) {
+                document.getElementById('timer-text').style.color = '#ff3333';
+            } else {
+                document.getElementById('timer-text').style.color = 'var(--primary)';
+            }
         }
 
         function loadQuestion(idx) {
@@ -762,10 +809,23 @@
             }
         }
 
-        function endGame() {
+        function endGame(reason = 'loss') {
             GameState.state = 'gameover';
+            if (GameState.timerInterval) clearInterval(GameState.timerInterval);
+
+            const modal = document.getElementById('gameover-modal');
+            const titleEl = modal.querySelector('.modal-title');
+
+            if (reason === 'win') {
+                titleEl.textContent = "任務成功";
+                titleEl.style.color = "var(--correct)";
+            } else {
+                titleEl.textContent = "任務失敗";
+                titleEl.style.color = "var(--wrong)";
+            }
+
             document.getElementById('final-score').textContent = GameState.score;
-            document.getElementById('gameover-modal').classList.add('visible');
+            modal.classList.add('visible');
             updateInteractRects(); // 確保重新抓取「重玩按鈕」的座標
         }
 
