@@ -451,6 +451,29 @@
         .rank-3 {
             color: #cd7f32;
         }
+
+        .leaderboard-photo {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--primary);
+            vertical-align: middle;
+            margin-right: 10px;
+        }
+
+        .rank-1 .leaderboard-photo {
+            border-color: #ffd700;
+            box-shadow: 0 0 10px #ffd700;
+        }
+
+        .rank-2 .leaderboard-photo {
+            border-color: #c0c0c0;
+        }
+
+        .rank-3 .leaderboard-photo {
+            border-color: #cd7f32;
+        }
     </style>
 </head>
 
@@ -543,19 +566,22 @@
     </div>
 
     <!-- 排行榜視窗 -->
-    <div id="leaderboard-modal" class="modal">
+    <div id="leaderboard-modal" class="modal" style="max-width: 700px;">
         <div class="modal-title" style="color:var(--primary)">TOP 10 AGENTS</div>
         <div id="leaderboard-loading" style="color: var(--primary);">Loading data...</div>
-        <table class="leaderboard-table" id="leaderboard-table" style="display: none;">
-            <thead>
-                <tr>
-                    <th>RANK</th>
-                    <th>DATE / TIME</th>
-                    <th>SCORE</th>
-                </tr>
-            </thead>
-            <tbody id="leaderboard-body"></tbody>
-        </table>
+        <div id="leaderboard-container" style="max-height: 400px; overflow-y: auto;">
+            <table class="leaderboard-table" id="leaderboard-table" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>RANK</th>
+                        <th>AGENT / PHOTO</th>
+                        <th>DATE / TIME</th>
+                        <th>SCORE</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboard-body"></tbody>
+            </table>
+        </div>
         <button class="menu-btn" onclick="closeLeaderboard()"
             style="width: 150px; padding: 10px; margin-top: 20px;">關閉</button>
     </div>
@@ -897,25 +923,44 @@
             modal.classList.add('visible');
             updateInteractRects(); // 確保重新抓取「重玩按鈕」的座標
 
-            // 自動上傳分數
-            submitScore(GameState.score);
+            // 自動拍一張照片並上傳分數
+            const photoData = capturePhoto();
+            submitScore(GameState.score, photoData);
         }
 
         // --- 排行榜邏輯 ---
-        async function submitScore(score) {
+
+        function capturePhoto() {
+            const video = document.getElementById('input-video');
+            const offscreenCanvas = document.createElement('canvas');
+            // 設定為較小的尺寸以符合 GAS 存儲限制
+            offscreenCanvas.width = 160;
+            offscreenCanvas.height = 120;
+            const octx = offscreenCanvas.getContext('2d');
+
+            // 鏡像翻轉回來
+            octx.translate(160, 0);
+            octx.scale(-1, 1);
+            octx.drawImage(video, 0, 0, 160, 120);
+
+            // 使用較低的品質參數縮小體積
+            return offscreenCanvas.toDataURL('image/jpeg', 0.5);
+        }
+
+        async function submitScore(score, photo) {
             if (!GameState.leaderboardURL) return;
-            const now = new Date();
-            const dateStr = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+            // 獲取使用者當地時間格式
+            const options = { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false };
+            const dateStr = new Date().toLocaleString('zh-TW', options).replace(/\//g, '-');
 
             try {
-                // 使用 text/plain 傳送 JSON 避免 CORS preflight (GAS 不支援 OPTIONS)
                 await fetch(GameState.leaderboardURL, {
                     method: 'POST',
                     mode: 'no-cors',
                     headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({ date: dateStr, score: score })
+                    body: JSON.stringify({ date: dateStr, score: score, photo: photo })
                 });
-                console.log("Score submitted via text/plain to GAS");
+                console.log("Score and photo submitted!");
             } catch (err) {
                 console.error("Submit error:", err);
             }
@@ -947,10 +992,15 @@
                 data.forEach((entry, index) => {
                     const row = document.createElement('tr');
                     const rankClass = index < 3 ? `rank-${index + 1}` : '';
+                    const photoHtml = entry.photo
+                        ? `<img src="${entry.photo}" class="leaderboard-photo">`
+                        : `<div class="leaderboard-photo" style="background:#222; display:inline-block; line-height:45px">👤</div>`;
+
                     row.innerHTML = `
                         <td class="${rankClass}">${index + 1}</td>
-                        <td>${entry.time}</td>
-                        <td style="font-family: 'Orbitron';">${entry.score.toLocaleString()}</td>
+                        <td style="text-align:left;">${photoHtml} Agent_${index + 1}</td>
+                        <td style="font-size: 0.8rem; color: #aaa;">${entry.time}</td>
+                        <td style="font-family: 'Orbitron'; font-weight:bold;">${entry.score.toLocaleString()}</td>
                     `;
                     tbody.appendChild(row);
                 });
